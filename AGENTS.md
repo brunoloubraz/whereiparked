@@ -7,11 +7,11 @@ O MVP terá **um único estacionamento salvo**, sem conta, autenticação, banco
 ## Stack decidida
 - Backend: Java 21, Spring Boot 4.1.2, Maven.
 - Frontend: HTML5, CSS3 e JavaScript sem framework; arquivos estáticos servidos pelo Spring Boot em `src/main/resources/static/`.
-- Futuras integrações (NÃO implementar na etapa 2): Leaflet, tiles OpenStreetMap, Geolocation API, Nominatim via API REST Java, localStorage.
+- Mapa Leaflet/OpenStreetMap e geolocalização já implementados. A integração do botão Parked e localStorage pertence à etapa 5.
 - Testes Java: dependências já presentes no `pom.xml`.
 
 ## Fluxo de trabalho
-- Leia a especificação da etapa solicitada em `docs/steps/` antes de alterar código.
+- Leia a especificação da etapa solicitada em `docs/step/` antes de alterar código.
 - Inspecione os arquivos existentes; preserve o que já funciona.
 - Execute somente o escopo explicitamente solicitado. Não implemente etapas futuras antecipadamente.
 - Prefira mudanças pequenas, simples, sem dependências ou abstrações desnecessárias.
@@ -22,4 +22,4 @@ O MVP terá **um único estacionamento salvo**, sem conta, autenticação, banco
 - Se a especificação divergir do repositório real, aponte a divergência antes de mudanças destrutivas.
 
 ## Escopo atual
-A etapa 1 (bootstrap) está concluída. A etapa em desenvolvimento é **2 — Interface mobile-first**, descrita em `docs/steps/002-mobile-layout.md`.
+As etapas 1, 2 e 3 estão concluídas. O escopo atual é **4 — API REST Java + Nominatim**, descrito em `docs/step/004-reverse-geocoding-api.md`. Preserve o frontend e não antecipe a etapa 5.
