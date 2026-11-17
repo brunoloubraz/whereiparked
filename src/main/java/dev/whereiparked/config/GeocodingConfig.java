@@ -15,7 +15,9 @@ import org.springframework.web.client.RestClient;
 public class GeocodingConfig {
     @Bean
     ClientHttpRequestFactoryBuilder<?> geocodingRequestFactoryBuilder() {
-        return ClientHttpRequestFactoryBuilder.jdk();
+        // HttpURLConnection preserves SocketTimeoutException during body reads.
+        // The java.net.http transport closes a timed-out body with a generic IOException.
+        return ClientHttpRequestFactoryBuilder.simple();
     }
 
     @Bean
