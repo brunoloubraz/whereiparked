@@ -56,7 +56,10 @@ GET /api/location/reverse?lat=-23.5614&lon=-46.6559
 
 `lat` e `lon` são decimais obrigatórios. Latitude aceita de -90 a 90 e longitude
 de -180 a 180, inclusive. Texto inválido, vazio, `NaN` e infinitos retornam 400
-antes de consultar o serviço externo.
+antes de consultar o serviço externo. Cada parâmetro aceita até 64 caracteres e
+escala decimal entre -32 e 32, inclusive. Notação científica dentro desses limites
+é aceita sem arredondamento; formatos extremos retornam 400 antes das operações
+de comparação e formatação. A equivalência numérica do cache é preservada.
 
 Exemplo ilustrativo de resposta:
 
@@ -83,7 +86,10 @@ um texto substituto. Fallbacks usam o primeiro valor não vazio:
 - `state` e `country`: respectivos campos externos.
 
 Se não houver `display_name` nem qualquer um dos componentes públicos úteis,
-a resposta será 404. Um resultado parcial pode retornar 200 com campos nulos.
+a resposta será 404. Um resultado parcial pode retornar 200 com campos nulos. Os campos textuais
+utilizados do Nominatim aceitam somente strings ou `null`; números, booleanos,
+objetos e arrays são respostas incompatíveis e resultam em 503. Essa regra fica
+restrita aos DTOs do provedor, sem alterar o mapper JSON global.
 
 Erros usam somente `code` e `message`, com mensagens controladas:
 
@@ -146,7 +152,8 @@ Os testes cobrem MVC, contrato de erros, serviço, fallbacks, cache, concorrênc
 limite, cliente HTTP e o fluxo completo com servidor externo simulado. Usam
 `MockRestServiceServer` e domínios `.invalid`: nenhuma chamada ao Nominatim público
 é necessária. O tempo é controlado nos testes, sem esperar o TTL real. O Mockito
-usa o mock maker de subclasses em testes, sem anexar agentes à JVM.
+usa o mock maker inline padrão, com anexação de agente à JVM. Ambientes restritos
+podem bloquear essa anexação e exigir execução dos testes fora do sandbox.
 
 Para uma consulta manual real, primeiro configurar um identificador válido e
 executar a aplicação. Só então chamar o endpoint, por exemplo:

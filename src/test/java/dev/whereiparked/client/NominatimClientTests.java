@@ -73,6 +73,18 @@ class NominatimClientTests {
         assertReason(GEOCODING_UNAVAILABLE);
     }
 
+    @Test void sendsScientificNotationWithoutExpandingDecimalStrings() {
+        server.expect(requestTo("https://provider.invalid/reverse?lat=1E-32&lon=0&format=jsonv2&addressdetails=1&accept-language=pt-BR"))
+                .andRespond(withSuccess("{\"display_name\":\"Place\"}", MediaType.APPLICATION_JSON));
+        assertThat(client.reverse(new BigDecimal("1e-32"), BigDecimal.ZERO).displayName()).isEqualTo("Place");
+    }
+
+    @Test void positiveExponentsDoNotIntroduceQuerySpaces() {
+        server.expect(requestTo("https://provider.invalid/reverse?lat=1E1&lon=0E32&format=jsonv2&addressdetails=1&accept-language=pt-BR"))
+                .andRespond(withSuccess("{\"display_name\":\"Place\"}", MediaType.APPLICATION_JSON));
+        assertThat(client.reverse(new BigDecimal("1e1"), new BigDecimal("0e32")).displayName()).isEqualTo("Place");
+    }
+
     @Test void mapsProviderNotFound() {
         server.expect(anything()).andRespond(withStatus(HttpStatus.NOT_FOUND));
         assertReason(ADDRESS_NOT_FOUND);

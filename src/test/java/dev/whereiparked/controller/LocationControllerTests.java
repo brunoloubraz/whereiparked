@@ -74,6 +74,36 @@ class LocationControllerTests {
         return Stream.of(Arguments.of("-90", "-180"), Arguments.of("90", "180"), Arguments.of("0", "0"));
     }
 
+    static Stream<Arguments> extremeCoordinates() {
+        return Stream.of("1e-2147483647", "1e2147483647", "0e-2147483647", "0e2147483647",
+                "1e-33", "0e33", "0." + "0".repeat(63), "0".repeat(65))
+                .flatMap(value -> Stream.of(Arguments.of(value, "0"), Arguments.of("0", value)));
+    }
+
+    @ParameterizedTest @MethodSource("extremeCoordinates")
+    void rejectsExtremeFormatsBeforeCallingService(String lat, String lon) throws Exception {
+        mvc.perform(get("/api/location/reverse").param("lat", lat).param("lon", lon))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_COORDINATES"));
+        verifyNoInteractions(service);
+    }
+
+    static Stream<Arguments> supportedFormats() {
+        return Stream.of(Arguments.of("1e-32", "-1e-32"), Arguments.of("0e32", "0e-32"), Arguments.of("1e1", "-1e2"),
+                Arguments.of("-2.35614e1", "-46.655900"),
+                Arguments.of("0." + "0".repeat(29) + "123", "0"),
+                Arguments.of("0".repeat(63) + "1", "0"));
+    }
+
+    @ParameterizedTest @MethodSource("supportedFormats")
+    void preservesSupportedDecimalsWithoutRounding(String lat, String lon) throws Exception {
+        when(service.reverse(any(), any())).thenReturn(new LocationResponse(
+                new BigDecimal(lat), new BigDecimal(lon), "Place", null, null, null, null));
+        mvc.perform(get("/api/location/reverse").param("lat", lat).param("lon", lon))
+                .andExpect(status().isOk());
+        verify(service).reverse(new BigDecimal(lat), new BigDecimal(lon));
+    }
+
     @ParameterizedTest @EnumSource(Reason.class)
     void mapsDomainErrors(Reason reason) throws Exception {
         when(service.reverse(any(), any())).thenThrow(new GeocodingException(reason));

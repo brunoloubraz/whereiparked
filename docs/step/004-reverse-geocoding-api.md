@@ -30,6 +30,7 @@ O endpoint não deve criar, consultar nem persistir registros de estacionamento;
 - `lon`: decimal obrigatório, entre -180 e 180 (inclusive).
 - Valores ausentes, inválidos, `NaN`, infinitos, fora de intervalo ou não numéricos devem gerar **400**.
 - Validar parâmetros antes de qualquer consulta ao serviço externo.
+- Proteção de formato: no máximo 64 caracteres por parâmetro e escala BigDecimal entre -32 e 32, inclusive; formatos extremos retornam 400, sem arredondamento.
 
 ### Resposta `200 OK` (exemplo ilustrativo)
 
@@ -181,7 +182,7 @@ Em Spring Boot 4, conferir imports atuais de `@WebMvcTest`, `@MockitoBean` e rec
 
 **Primeiro, apenas planejar:**
 
-> Leia `AGENTS.md` e `docs/steps/004-reverse-geocoding-api.md`. Analise o código existente, especialmente `pom.xml` e os pacotes Java. Apresente um plano pequeno e sequencial com os arquivos a modificar, riscos e estratégia de testes. Não altere nenhum arquivo ainda, não crie commits e não abra PRs.
+> Leia `AGENTS.md` e `docs/step/004-reverse-geocoding-api.md`. Analise o código existente, especialmente `pom.xml` e os pacotes Java. Apresente um plano pequeno e sequencial com os arquivos a modificar, riscos e estratégia de testes. Não altere nenhum arquivo ainda, não crie commits e não abra PRs.
 
 **Depois de revisar o plano:**
 

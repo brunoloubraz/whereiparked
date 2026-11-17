@@ -1,12 +1,16 @@
 package dev.whereiparked;
 
 import java.io.IOException;
+import java.util.stream.Stream;
 import java.net.SocketTimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.restclient.test.autoconfigure.AutoConfigureMockRestServiceServer;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -68,6 +72,33 @@ class LocationApiTests {
     @Test void timeoutReturns504() throws Exception {
         server.expect(anything()).andRespond(withException(new SocketTimeoutException("private URL")));
         requestError(504, "GEOCODING_TIMEOUT");
+    }
+
+    static Stream<String> incompatibleProviderText() {
+        return Stream.of("123", "true", "{}", "[]").flatMap(value -> Stream.concat(
+                Stream.of("{\"display_name\":" + value + "}", "{\"error\":" + value + "}"),
+                Stream.of("road", "pedestrian", "residential", "footway", "path", "city", "town",
+                        "village", "municipality", "state", "country")
+                        .map(field -> "{\"display_name\":\"Valid text\",\"address\":{\"" + field + "\":" + value + "}}")));
+    }
+
+    @ParameterizedTest @MethodSource("incompatibleProviderText")
+    void incompatibleProviderTextReturns503(String body) throws Exception {
+        server.expect(anything()).andRespond(withSuccess(body, APPLICATION_JSON));
+        requestError(503, "GEOCODING_UNAVAILABLE");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "{\"display_name\":\"Brasil\"}",
+            "{\"display_name\":\"Brasil\",\"address\":null,\"error\":null}",
+            "{\"display_name\":null,\"address\":{\"road\":null,\"country\":\"Brasil\"}}",
+            "{\"address\":{\"road\":null,\"pedestrian\":null,\"residential\":null,\"footway\":null,\"path\":null,\"city\":null,\"town\":null,\"village\":null,\"municipality\":null,\"state\":null,\"country\":\"Brasil\"}}"})
+    void optionalMissingAndNullTextRemainValid(String body) throws Exception {
+        server.expect(anything()).andRespond(withSuccess(body, APPLICATION_JSON));
+        mvc.perform(get("/api/location/reverse").param("lat", "10").param("lon", "20"))
+                .andExpect(status().isOk());
+        server.verify();
     }
 
     private void requestError(int status, String code) throws Exception {

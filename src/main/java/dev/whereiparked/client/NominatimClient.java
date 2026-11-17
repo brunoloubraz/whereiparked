@@ -30,10 +30,11 @@ public class NominatimClient {
             throw new GeocodingException(GEOCODING_UNAVAILABLE);
         }
         try {
+            // Keep scientific notation compact; avoid a plus sign being decoded as a query space.
             NominatimResponse response = restClient.get()
                     .uri(builder -> builder.path("/reverse")
-                            .queryParam("lat", latitude.toPlainString())
-                            .queryParam("lon", longitude.toPlainString())
+                            .queryParam("lat", latitude.toString().replace("E+", "E"))
+                            .queryParam("lon", longitude.toString().replace("E+", "E"))
                             .queryParam("format", "jsonv2")
                             .queryParam("addressdetails", "1")
                             .queryParam("accept-language", "pt-BR").build())
