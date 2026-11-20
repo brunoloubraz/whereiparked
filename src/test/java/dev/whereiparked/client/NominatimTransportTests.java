@@ -24,6 +24,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -39,6 +40,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /** Exercises the production HTTP transport over loopback, not MockRestServiceServer. */
 @SpringBootTest
 @AutoConfigureMockMvc
+@TestPropertySource("classpath:geocoding-test.properties")
 class NominatimTransportTests {
     private enum Mode { VALID, BEFORE_HEADERS, BODY_STALL, INVALID, DISCONNECT, ERROR, REDIRECT }
 

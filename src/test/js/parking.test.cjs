@@ -31,7 +31,8 @@ function setup(options = {}) {
   };
   const views = [], cars = [], currents = [], gps = [], requests = [], timers = new Set();
   const circles = [], watches = [], cleared = [], activeWatches = new Set(), windowEvents = {};
-  const map = { setView(point, zoom) { views.push({ point: [...point], zoom }); return this; }, invalidateSize() {}, removeLayer(layer) { layer.removed = true; } };
+  const tileEvents = {}, resizeObservers = [], invalidations = [];
+  const map = { setView(point, zoom) { views.push({ point: [...point], zoom }); return this; }, invalidateSize(options) { invalidations.push({ ...options }); }, removeLayer(layer) { layer.removed = true; } };
   function marker(point, config, collection) {
     const m = { point: [...point], config, addTo() { return this; },
       setLatLng(point) { this.point = [...point]; return this; },
@@ -45,7 +46,7 @@ function setup(options = {}) {
   }
   const L = {
     map: () => map,
-    tileLayer: () => ({ on() { return this; }, addTo() { return this; } }),
+    tileLayer: () => ({ on(event, callback) { tileEvents[event] = callback; return this; }, addTo() { return this; } }),
     marker: (p, c) => marker(p, c, cars), circleMarker: (p, c) => marker(p, c, currents),
     circle: (p, c) => marker(p, c, circles),
     divIcon: config => config
@@ -76,6 +77,10 @@ function setup(options = {}) {
   } };
   vm.runInNewContext(source, {
     window, L, document, navigator, URLSearchParams, AbortController, Uint8Array,
+    ResizeObserver: options.noResizeObserver ? undefined : class {
+      constructor(callback) { this.callback = callback; resizeObservers.push(this); }
+      observe(target) { this.target = target; }
+    },
     setTimeout(callback, ms) { const timer = { callback, ms }; timers.add(timer); return timer; },
     clearTimeout(timer) { timers.delete(timer); },
     fetch(url, config) {
@@ -85,7 +90,7 @@ function setup(options = {}) {
       });
     }
   });
-  return { elements, data, writes, views, cars, currents, gps, requests, timers, options, circles, watches, cleared, activeWatches, windowEvents,
+  return { elements, data, writes, views, cars, currents, gps, requests, timers, options, circles, watches, cleared, activeWatches, windowEvents, tileEvents, resizeObservers, invalidations,
     saved: () => JSON.parse(data.get(KEY)),
     status: () => elements['parking-status'].textContent,
     button: () => elements['park-button'],
@@ -621,4 +626,58 @@ test('HTTP failures remain visible with controlled details and never expose raw 
     assert.equal(app.saved().latitude, 30);
     assert.equal(app.requests.length, 1);
   }
+});
+
+
+test('parking button exposes busy state during acquisition and resets on success or failure', () => {
+  for (const outcome of ['success', 'denied', 'timeout', 'storage']) {
+    const app = setup(); app.ready();
+    assert.equal(app.button().attributes['aria-busy'], 'false');
+    app.click();
+    assert.equal(app.button().attributes['aria-busy'], 'true');
+    assert.equal(app.button().disabled, true);
+    if (outcome === 'denied') app.watches[0].error({ code: 1 });
+    else if (outcome === 'timeout') app.finish();
+    else {
+      app.options.writeError = outcome === 'storage';
+      app.watches[0].success(position());
+    }
+    assert.equal(app.button().attributes['aria-busy'], 'false');
+    assert.equal(app.button().textContent, 'Parked');
+    assert.equal(app.button().disabled, outcome === 'denied');
+  }
+});
+
+test('tile error stays visible until a successful loading cycle without affecting saved parking', () => {
+  const raw = JSON.stringify(record()); const app = setup({ raw });
+  app.tileEvents.loading();
+  app.tileEvents.tileerror();
+  const error = app.elements['map-error'];
+  assert.equal(error.hidden, false);
+  assert.match(error.textContent, /Não foi possível carregar partes do mapa/);
+  app.tileEvents.load();
+  assert.equal(error.hidden, false);
+  app.tileEvents.loading();
+  app.tileEvents.load();
+  assert.equal(error.hidden, true);
+  assert.equal(app.data.get(KEY), raw);
+  assert.equal(app.writes.length, 0);
+  assert.equal(app.requests.length, 0);
+  assert.deepEqual(app.cars[0].point, [10, 20]);
+});
+
+test('map resize invalidates size without panning and works without ResizeObserver', () => {
+  const raw = JSON.stringify(record()); const app = setup({ raw });
+  assert.equal(app.resizeObservers.length, 1);
+  assert.equal(app.resizeObservers[0].target, app.elements.map);
+  const views = [...app.views];
+  app.resizeObservers[0].callback();
+  assert.deepEqual(app.invalidations, [{ pan: false }]);
+  assert.deepEqual(app.views, views);
+  assert.equal(app.data.get(KEY), raw);
+  const unsupported = setup({ raw, noResizeObserver: true });
+  unsupported.ready();
+  assert.equal(unsupported.resizeObservers.length, 0);
+  assert.equal(unsupported.cars.length, 1);
+  assert.equal(unsupported.button().disabled, false);
 });

@@ -18,6 +18,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.restclient.test.autoconfigure.RestClientTest;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -30,10 +31,9 @@ import static org.assertj.core.api.Assertions.*;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.*;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.*;
 
-@RestClientTest(value = NominatimClient.class, properties = {
-        "geocoding.base-url=https://provider.invalid",
-        "geocoding.user-agent=WhereIParked/offline-tests (https://contact.invalid)"})
+@RestClientTest(NominatimClient.class)
 @Import(GeocodingConfig.class)
+@TestPropertySource("classpath:geocoding-test.properties")
 class NominatimClientTests {
     @Autowired NominatimClient client;
     @Autowired MockRestServiceServer server;

@@ -9,7 +9,7 @@ endereço aproximado, quando disponível.
 
 - JDK 21, com `JAVA_HOME` configurado.
 - Spring Boot 4.1.2 e Maven Wrapper incluído no repositório.
-- Nenhuma dependência adicional foi necessária nesta etapa.
+- Node.js 24 para a suíte JavaScript; não é necessário para iniciar o backend.
 
 Compilar, testar e gerar o JAR:
 
@@ -150,9 +150,18 @@ Referência da API: <https://nominatim.org/release-docs/latest/api/Reverse/>.
 Os testes cobrem MVC, contrato de erros, serviço, fallbacks, cache, concorrência,
 limite, cliente HTTP e o fluxo completo com servidor externo simulado. Usam
 `MockRestServiceServer` e domínios `.invalid`: nenhuma chamada ao Nominatim público
-é necessária. O tempo é controlado nos testes, sem esperar o TTL real. O Mockito
-usa o mock maker inline padrão, com anexação de agente à JVM. Ambientes restritos
-podem bloquear essa anexação e exigir execução dos testes fora do sandbox.
+é necessária. O tempo de cache/limite é controlado nos testes, sem esperar o TTL
+real; os testes do transporte exercitam timeouts curtos em HTTP local. As configurações
+em `src/test/resources/geocoding-test.properties` substituem `GEOCODING_*` do ambiente;
+os testes de transporte usam servidor em `127.0.0.1` com porta efêmera.
+
+O Mockito mantém o mock maker inline e é carregado ao iniciar a JVM de testes com
+`-javaagent`, sem depender de autoanexação. O goal `properties` do
+`maven-dependency-plugin` resolve o JAR `mockito-core` já presente na árvore de testes;
+o Surefire usa essa propriedade, sem caminho absoluto ou versão duplicada. A
+configuração segue a [documentação oficial do Mockito para Java 21+](https://github.com/mockito/mockito/blob/main/mockito-core/src/main/java/org/mockito/Mockito.java).
+O primeiro build pode precisar baixar dependências dos plugins. Um sandbox ainda
+pode restringir o cache Maven ou sockets locais, independentemente do agente.
 
 Para uma consulta manual real, primeiro configurar um identificador válido e
 executar a aplicação. Só então chamar o endpoint, por exemplo:
@@ -229,9 +238,18 @@ ao backend e ao provedor. Não há garantia de endereço exato nem de funcioname
 integral offline: Leaflet e tiles ainda dependem da rede. Não há banco de dados,
 login, histórico, sincronização entre dispositivos ou deploy nesta etapa.
 
-## Testes da etapa 5
+## Testes automatizados e CI
 
-Testes JavaScript sem dependências adicionais (Node 20 ou superior):
+Com Java 21 e Node.js 24 (versão usada no CI), executar na raiz do repositório:
+
+```sh
+./mvnw clean verify
+node --test src/test/js/*.test.cjs
+git diff --check
+```
+
+Não é necessário executar `npm install`: não há dependências npm.
+Para executar somente a suíte JavaScript atual:
 
 ```sh
 node --test src/test/js/parking.test.cjs
@@ -243,8 +261,37 @@ falhas de GPS/armazenamento/API, timeout, respostas fora de ordem, endereço com
 texto e falha na persistência do endereço. Também cobrem múltiplas amostras,
 menor precisão estimada, prazo sem melhoria/sem leitura, `clearWatch()`, permissão
 revogada, saída da página, callbacks após salvar e atualização do círculo em metros.
-Não acessam o Nominatim público.
+Não acessam o Nominatim público. A suíte também verifica `aria-busy`, falha e
+recuperação dos tiles e redimensionamento do mapa sem mover a visualização.
 Não substituem testes de renderização ou permissões reais do navegador.
+
+O workflow [CI](.github/workflows/ci.yml) executa em Pull Requests, pushes para
+`main` e por disparo manual (`workflow_dispatch`, disponível quando o workflow
+estiver na branch padrão). Os jobs são independentes em `ubuntu-latest`:
+
+- **Java Tests:** Temurin 21, Maven Wrapper e cache Maven; executa
+  `./mvnw -B --no-transfer-progress clean verify`, com limite de 15 minutos.
+- **JavaScript Tests:** Node.js 24, sem instalação ou cache npm; executa
+  `node --test src/test/js/*.test.cjs`, com limite de 5 minutos.
+
+As ações oficiais são `actions/checkout@v7`, `actions/setup-java@v6` e
+`actions/setup-node@v7`. O token recebe somente `contents: read`, e o checkout não
+persiste credenciais. Não são necessários secrets, GPS, navegador, tiles ou
+Nominatim público para as suítes. Downloads de ferramentas e dependências precisam
+de acesso à internet quando não estiverem em cache.
+
+A validação local do YAML não comprova uma execução no GitHub. Após publicar as
+alterações por ação autorizada do mantenedor, conferir os dois jobs verdes no PR.
+Safari/iPhone via HTTPS, renderização e leitor de tela permanecem verificações
+manuais, conforme o roteiro abaixo; não fazem parte do CI.
+
+Validação local da etapa 6: **168 testes Java** e **33 testes JavaScript**
+aprovados, preservando os 149/30 casos anteriores. Java foi executado com Temurin
+21.0.13, inclusive com carregamento dinâmico de agentes desativado e `GEOCODING_*`
+inválidas no ambiente. A suíte completa precisou de execução fora do sandbox por
+restrições ao cache Maven e aos sockets locais. JavaScript passou em Node.js
+20.12.1; Node.js 24 não estava instalado. YAML parseado e revisado localmente;
+execução real dos dois jobs no GitHub Actions permanece pendente.
 
 Diagnóstico de endereço indisponível:
 
