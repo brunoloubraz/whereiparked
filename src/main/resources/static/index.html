@@ -29,7 +29,8 @@
     </main>
 
     <footer class="page-footer">
-      <button class="park-button" type="button" disabled>Parked</button>
+      <button id="park-button" class="park-button" type="button" aria-describedby="parking-status location-status" disabled>Parked</button>
+      <p id="parking-status" class="map-status" role="status" aria-live="polite" aria-atomic="true"></p>
     </footer>
   </body>
 </html>

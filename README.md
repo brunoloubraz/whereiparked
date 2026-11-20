@@ -1,9 +1,9 @@
 # Where I Parked
 
 Site mobile-first para ajudar o usuário a reencontrar onde estacionou. A interface
-possui mapa Leaflet/OpenStreetMap e geolocalização. A etapa 4 acrescenta uma API
-Java de geocodificação reversa, ainda sem integração com o frontend. O botão
-**Parked** permanece desabilitado.
+possui mapa Leaflet/OpenStreetMap e geolocalização. O botão **Parked** salva um
+único estacionamento neste navegador e consulta a API Java para acrescentar um
+endereço aproximado, quando disponível.
 
 ## Requisitos e execução
 
@@ -140,9 +140,8 @@ na aplicação/proxy para esse endpoint.
 Dados de geocodificação: **© OpenStreetMap contributors**, disponíveis sob a
 [ODbL](https://www.openstreetmap.org/copyright), consultados via Nominatim.
 Essa atribuição é independente da atribuição dos tiles já exibida no mapa.
-Ao integrar o endereço ao frontend na etapa seguinte, exibir a atribuição da
-geocodificação de forma adequada; não considerar a atribuição dos tiles suficiente
-para qualquer novo uso dos resultados.
+O popup do carro exibe a atribuição da geocodificação junto ao endereço
+aproximado, além da atribuição dos tiles já presente no mapa.
 
 Referência da API: <https://nominatim.org/release-docs/latest/api/Reverse/>.
 
@@ -162,6 +161,142 @@ executar a aplicação. Só então chamar o endpoint, por exemplo:
 curl 'http://localhost:8080/api/location/reverse?lat=-23.5614&lon=-46.6559'
 ```
 
-Respeitar o intervalo e evitar consultas repetidas. Esta etapa não implementa
-chamadas do frontend à API, estacionamento salvo, localStorage, banco de dados,
-login ou sincronização. Não inclui deploy.
+Respeitar o intervalo e evitar consultas repetidas. O frontend consulta somente
+este endpoint, após salvar um estacionamento; não consulta diretamente o Nominatim.
+
+## Salvar e reencontrar o carro
+
+1. Acesse o site por HTTPS ou `http://localhost:8080` e permita a localização.
+2. Após uma leitura válida, **Parked** fica habilitado. Ao clicar, um
+   `watchPosition()` temporário coleta amostras por até 5 segundos, com alta precisão
+   e `maximumAge: 0`. Uma amostra válida de até 10 m encerra a coleta imediatamente;
+   sem isso, salva a melhor amostra disponível ao final. Não calcula médias nem
+   desloca coordenadas. A leitura inicial não participa dessa seleção.
+3. Se a gravação local funcionar, aparece um anel verde com **P** lateral e a
+   confirmação curta `Estacionamento salvo`. Durante a captura, o botão mostra
+   `Marcando...`. O centro do anel é a coordenada real; ele é vazado para deixar o ponto azul
+   visível mesmo quando as posições coincidem. Um círculo azul translúcido usa
+   `coords.accuracy` como raio em metros, representando uma estimativa, sem
+   garantir que a posição real esteja dentro dele. Não há balão permanente: toque
+   no ponto azul para consultar a localização atual e a precisão, ou no **P** para
+   consultar endereço e precisão do estacionamento. Ambos permitem acesso por
+   teclado; estados e erros continuam anunciados via `aria-live`.
+4. O endereço aproximado é opcional e aparece no popup do carro se a API responder.
+5. Recarregue ou reabra na mesma origem e navegador: o carro é restaurado sem
+   consulta de endereço e mesmo se o GPS atual for negado. A localização atual
+   não desloca automaticamente o mapa para longe do carro salvo.
+6. Ao estacionar novamente, o novo registro substitui o anterior, sem histórico.
+
+A chave `whereiparked:parking:v1` contém um único objeto JSON com `version: 1`,
+`id`, `latitude`, `longitude`, `address` (texto ou `null`) e `savedAt` (ISO 8601).
+Novos registros também guardam `accuracy` em metros, opcional na versão 1, para
+exibir a precisão no popup após reabrir. Registros antigos sem esse campo continuam
+válidos e não recebem uma precisão inventada.
+As coordenadas são a fonte da verdade. O identificador usa `crypto.randomUUID()`;
+em navegadores sem esse método, usa 128 bits de `crypto.getRandomValues()` em
+hexadecimal. Não há identificador de conta ou rastreamento contínuo.
+
+A observação termina com `clearWatch()` antes de gravar ou informar falha. Não
+há rastreamento após salvar, e callbacks tardios são ignorados. Sem melhoria, a
+melhor amostra recente é usada, mesmo se ainda indicar 50 m ou mais. Não há meta
+obrigatória de precisão: a seleção não melhora artificialmente o sinal recebido.
+Erros transitórios permitem novas amostras até o prazo; permissão negada encerra
+imediatamente sem salvar enquanto a aquisição estiver ativa. Após salvar,
+callbacks posteriores são ignorados. Sair da página cancela a aquisição, sem
+gravação parcial.
+
+GPS negado, prazo encerrado sem amostra válida ou falha ao gravar não substituem o
+estacionamento anterior. Coordenadas e precisão não finita/negativa são ignoradas
+na seleção. A precisão detalhada aparece apenas nos popups. Ao restaurar, o
+círculo vem de uma nova leitura atual, nunca da posição histórica do carro. JSON
+inválido ou versão desconhecida é ignorado com mensagem, sem apagar automaticamente
+o conteúdo. Erros de acesso ao armazenamento
+são tratados, inclusive `SecurityError` e quota excedida. Se o endereço não puder
+ser persistido, as coordenadas já salvas continuam válidas.
+
+A consulta de endereço ocorre uma vez por estacionamento salvo, sem retry,
+polling ou consulta ao recarregar. O timeout do frontend é de 10 segundos. Falhas
+HTTP (inclusive 429, 503 e 504), rede ou JSON inválido mantêm `address: null`.
+Um `200` com endereço nulo também é aceito sem inventar endereço a partir dos
+componentes. Respostas atrasadas só podem atualizar o registro com o mesmo `id`;
+a chave é relida antes da gravação. Não há sincronização da interface entre abas
+nem transação entre elas; `localStorage` não oferece comparação e troca atômicas.
+
+A persistência depende da **origem e navegador**: porta, protocolo ou domínio
+diferentes não compartilham o registro. Navegação privada, limpeza de dados ou
+políticas do navegador podem removê-lo. A consulta de endereço transmite a posição
+ao backend e ao provedor. Não há garantia de endereço exato nem de funcionamento
+integral offline: Leaflet e tiles ainda dependem da rede. Não há banco de dados,
+login, histórico, sincronização entre dispositivos ou deploy nesta etapa.
+
+## Testes da etapa 5
+
+Testes JavaScript sem dependências adicionais (Node 20 ou superior):
+
+```sh
+node --test src/test/js/parking.test.cjs
+```
+
+Usam o código real de `app.js` com DOM, Leaflet, GPS, armazenamento e HTTP simulados.
+Cobrem captura recente, bloqueio de cliques, restauração, substituição, validação,
+falhas de GPS/armazenamento/API, timeout, respostas fora de ordem, endereço como
+texto e falha na persistência do endereço. Também cobrem múltiplas amostras,
+menor precisão estimada, prazo sem melhoria/sem leitura, `clearWatch()`, permissão
+revogada, saída da página, callbacks após salvar e atualização do círculo em metros.
+Não acessam o Nominatim público.
+Não substituem testes de renderização ou permissões reais do navegador.
+
+Diagnóstico de endereço indisponível:
+
+- O backend usa `GEOCODING_USER_AGENT` vazio por padrão. Sem identificador com
+  contato real no ambiente do **processo Java**, retorna `503 GEOCODING_UNAVAILABLE`
+  antes de acessar o Nominatim. O túnel HTTPS fornece acesso seguro ao GPS, mas
+  não configura o identificador do backend. Defina-o no terminal/IDE que inicia
+  Java e reinicie a aplicação; não coloque credenciais ou contato fictício no código.
+- A consulta local desta revisão, com coordenadas fictícias `0, 0`, retornou
+  `503 GEOCODING_UNAVAILABLE`. A variável estava ausente no shell do agente. Isso
+  é compatível com a configuração faltante, mas não confirma o ambiente do processo
+  que atendeu ao iPhone: 503 também pode indicar falha de rede/provedor ou resposta
+  externa incompatível. Confira a configuração efetiva e a resposta no painel
+  Network, sem divulgar coordenadas reais em logs ou capturas.
+- O frontend informa falhas com aviso curto e detalha o motivo controlado no popup:
+  400 (entrada recusada), 404 (sem endereço), 429 (limite), 503 (indisponibilidade),
+  504 (tempo excedido), rede/timeout ou resposta inválida. Não exibe texto bruto
+  do provedor, não confunde esses erros com GPS e não faz novas tentativas automáticas.
+- Um 200 com `address: null` continua sem endereço, mesmo se houver componentes
+  parciais. Falhas de leitura/gravação do endereço não removem o estacionamento.
+
+Verificação Java e formatação do diff:
+
+```sh
+./mvnw clean verify
+git diff --check
+```
+
+Roteiro manual no navegador:
+
+- Comece sem a chave salva: confira mapa e botão habilitado após permitir GPS.
+- Clique em **Parked**, aguarde até 5 segundos (ou o encerramento antecipado) e
+  confira o objeto único em Application/Storage e o anel verde. Confira a margem estimada nos popups e o
+  círculo azul no mapa; quando as posições coincidem, o ponto azul deve continuar
+  visível no centro do anel. Clique no marcador para conferir endereço e atribuição,
+  se disponíveis.
+- Recarregue, feche e reabra na mesma origem; negue GPS e confira que o carro
+  continua visível. No painel Network, não deve haver geocodificação na abertura.
+- Salve outro ponto: confirme um único marcador de carro e substituição do objeto.
+- Sem `GEOCODING_USER_AGENT`, confirme a resposta 503 e a preservação do carro salvo.
+- Com DevTools/mocks locais, simule GPS negado/timeout, storage bloqueado, API
+  429/504/offline e respostas fora de ordem. Confira preservação e feedback.
+- Verifique teclado, anúncio dos estados com leitor de tela, largura de 320 px,
+  orientação e ausência de sobreposição ou rolagem horizontal.
+- Com GPS simulado, envie amostras de 52 m, 12 m e 48 m; confira que a amostra de
+  12 m é salva ao final dos 5 segundos. Com 4 m ou 10 m, deve salvar imediatamente.
+  Envie outra após salvar: nada deve mudar.
+- Sem melhoria (por exemplo, 52 m e 55 m), confira uso dos 52 m e aviso da margem.
+  Sem nenhuma amostra válida ou negando permissão, confira o estacionamento anterior.
+
+O usuário relatou teste físico anterior no Safari/iPhone via túnel HTTPS com
+precisão de aproximadamente 4 m. Este refinamento de interface e tempo de captura
+ainda requer nova validação no dispositivo; testes visuais e leitor de tela real
+permanecem **não verificados pelo agente** neste ambiente. Não realizar deploy
+para executar estes testes.
