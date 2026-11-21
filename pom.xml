@@ -10,7 +10,7 @@
 	</parent>
 	<groupId>dev.whereiparked</groupId>
 	<artifactId>whereiparked</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
+	<version>1.0.0</version>
 	<name>Where I Parked</name>
 	<description>A web application to help users find their parked cars.</description>
 	<url/>
