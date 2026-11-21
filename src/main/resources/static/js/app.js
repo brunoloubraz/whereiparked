@@ -6,6 +6,7 @@
   const TARGET_ACCURACY_M = 10;
   const GPS_OPTIONS = { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 };
   const parkButton = document.getElementById('park-button');
+  const clearParkingButton = document.getElementById('clear-parking-button');
   const parkingStatus = document.getElementById('parking-status');
   const TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
   const locationStatus = document.getElementById('location-status');
@@ -52,6 +53,7 @@
   let locationUsable = false;
   let capturing = false;
   let operation = 0;
+  let parkingRemovalFailed = false;
 
   function validCoordinates(value) {
     return value && Number.isFinite(value.latitude) && Number.isFinite(value.longitude)
@@ -128,6 +130,28 @@
     parkingStatus.textContent = 'Não foi possível recuperar o estacionamento salvo neste navegador.';
   }
 
+  updateButton();
+  clearParkingButton.addEventListener('click', () => {
+    if (!parking || capturing) return;
+    if (!window.confirm('Remover a marcação do estacionamento?')) return;
+    try {
+      window.localStorage.removeItem(PARKING_KEY);
+    } catch {
+      // Preservar o registro e impedir que HTTP pendente esconda este erro.
+      parkingRemovalFailed = true;
+      parkingStatus.textContent = 'Não foi possível remover a marcação neste navegador. Tente novamente.';
+      return;
+    }
+    ++operation;
+    parking = null;
+    if (parkingMarker) map.removeLayer(parkingMarker);
+    parkingMarker = null;
+    updateButton();
+    parkingStatus.textContent = 'Marcação removida';
+    if (!parkButton.disabled && !parkButton.hidden) parkButton.focus();
+    else parkingStatus.focus();
+  });
+
   if (!window.isSecureContext || !navigator.geolocation) {
     locationStatus.textContent = 'A localização exige HTTPS ou acesso por localhost e um navegador compatível.';
     return;
@@ -137,6 +161,8 @@
     parkButton.disabled = capturing || !locationUsable;
     parkButton.textContent = capturing ? 'Marcando...' : 'Parked';
     parkButton.setAttribute('aria-busy', String(capturing));
+    clearParkingButton.hidden = !parking;
+    clearParkingButton.disabled = !parking || capturing;
   }
 
   function accuracyDetails(accuracy) {
@@ -340,7 +366,7 @@
       // Endereço é opcional: nunca desfazer a gravação das coordenadas nem repetir HTTP.
     } finally {
       clearTimeout(timer);
-      if (message && operation === startedOperation && parking?.id === record.id) {
+      if (message && !parkingRemovalFailed && operation === startedOperation && parking?.id === record.id) {
         if (detail) showParking(parking, false, detail);
         parkingStatus.textContent = message;
       }
@@ -350,6 +376,7 @@
   parkButton.addEventListener('click', () => {
     if (capturing || !locationUsable) return;
     capturing = true;
+    parkingRemovalFailed = false;
     const startedOperation = ++operation;
     updateButton();
     parkingStatus.textContent = 'Marcando...';

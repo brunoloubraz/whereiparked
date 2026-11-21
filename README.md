@@ -238,6 +238,27 @@ ao backend e ao provedor. Não há garantia de endereço exato nem de funcioname
 integral offline: Leaflet e tiles ainda dependem da rede. Não há banco de dados,
 login, histórico, sincronização entre dispositivos ou deploy nesta etapa.
 
+## Etapa 6.5 — Remover marcação
+
+Com um estacionamento salvo ou restaurado, **Remover marcação** aparece como ação
+secundária abaixo de Parked. A confirmação pergunta “Remover a marcação do
+estacionamento?”. Cancelar preserva o estado. Confirmar remove somente a chave
+`whereiparked:parking:v1` e o marcador verde, anunciando “Marcação removida”.
+O ponto azul, o círculo de precisão e a visualização do mapa permanecem.
+
+A ação funciona com GPS negado, ausente ou contexto inseguro e fica bloqueada
+durante uma captura Parked. Se o armazenamento falhar, o estacionamento permanece
+com feedback de erro e possibilidade de tentar novamente. Consultas HTTP antigas,
+inclusive com JSON pendente, não recriam um estacionamento removido nem substituem
+feedback posterior de remoção. Um endereço ainda pode enriquecer o registro
+preservado após falha de exclusão, sem ocultar esse erro.
+
+Depois da exclusão, recarregar não restaura o carro; um novo Parked salva um novo
+registro no formato existente. O foco segue para Parked quando disponível ou para
+o status quando Parked está desabilitado; o status não entra na sequência de Tab.
+Se Leaflet não carregar, permanece o erro de mapa e as ações ficam indisponíveis.
+Não há sincronização entre abas, histórico, desfazer ou chamada de API para excluir.
+
 ## Testes automatizados e CI
 
 Com Java 21 e Node.js 24 (versão usada no CI), executar na raiz do repositório:
@@ -263,6 +284,10 @@ menor precisão estimada, prazo sem melhoria/sem leitura, `clearWatch()`, permis
 revogada, saída da página, callbacks após salvar e atualização do círculo em metros.
 Não acessam o Nominatim público. A suíte também verifica `aria-busy`, falha e
 recuperação dos tiles e redimensionamento do mapa sem mover a visualização.
+A etapa 6.5 acrescenta oito testes (com variações de cenário) para visibilidade,
+confirmação/cancelamento, exclusão da chave correta, falhas de remoção/getter,
+funcionamento sem GPS, bloqueio durante captura, foco, recarga, nova marcação,
+HTTP/JSON atrasados e preservação do ponto azul/círculo/mapa.
 Não substituem testes de renderização ou permissões reais do navegador.
 
 O workflow [CI](.github/workflows/ci.yml) executa em Pull Requests, pushes para
@@ -292,6 +317,13 @@ inválidas no ambiente. A suíte completa precisou de execução fora do sandbox
 restrições ao cache Maven e aos sockets locais. JavaScript passou em Node.js
 20.12.1; Node.js 24 não estava instalado. YAML parseado e revisado localmente;
 execução real dos dois jobs no GitHub Actions permanece pendente.
+
+Validação local da etapa 6.5: **168 testes Java** e **41 testes JavaScript**
+aprovados (incluindo todos os 33 JavaScript anteriores), com Temurin 21.0.13 e
+Node.js 20.12.1. A suíte Java precisou de execução fora do sandbox porque os testes
+de transporte usam sockets em loopback. `git diff --check` passou. Node.js 24 no
+GitHub Actions e Safari/iPhone/VoiceOver ainda exigem validação separada; não houve
+push, criação de PR ou deploy nesta etapa.
 
 Diagnóstico de endereço indisponível:
 
@@ -331,6 +363,14 @@ Roteiro manual no navegador:
 - Recarregue, feche e reabra na mesma origem; negue GPS e confira que o carro
   continua visível. No painel Network, não deve haver geocodificação na abertura.
 - Salve outro ponto: confirme um único marcador de carro e substituição do objeto.
+- Confira que **Remover marcação** aparece apenas com estacionamento salvo e fica
+  desabilitado durante captura. Cancele a confirmação e confira que nada mudou.
+- Confirme a remoção: somente o verde deve desaparecer, com anúncio “Marcação
+  removida”; mapa, ponto azul e círculo devem permanecer. Confira foco em Parked
+  ou no status se GPS estiver indisponível. Recarregue: carro e ação não reaparecem.
+- Marque novamente e confirme o retorno da ação. Restaure um estacionamento com
+  GPS negado e confira a remoção. Simule falha de armazenamento: registro/marcador
+  devem permanecer com erro; uma resposta de endereço pendente não deve ocultá-lo.
 - Sem `GEOCODING_USER_AGENT`, confirme a resposta 503 e a preservação do carro salvo.
 - Com DevTools/mocks locais, simule GPS negado/timeout, storage bloqueado, API
   429/504/offline e respostas fora de ordem. Confira preservação e feedback.

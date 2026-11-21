@@ -13,16 +13,22 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
 function setup(options = {}) {
   const elements = {};
   function element() {
-    return { textContent: '', disabled: true, children: [], attributes: {}, listeners: {},
+    return { textContent: '', disabled: true, hidden: false, children: [], attributes: {}, listeners: {},
+      focus() { assert.equal(this.disabled, false); assert.equal(this.hidden, false); document.activeElement = this; },
       setAttribute(k, v) { this.attributes[k] = v; },
       append(...children) { this.children.push(...children); },
       addEventListener(k, callback) { this.listeners[k] = callback; } };
   }
   const document = { getElementById: id => elements[id] ||= element(), createElement: element };
   const data = new Map(options.raw === undefined ? [] : [[KEY, options.raw]]);
-  const writes = [];
+  const writes = [], removals = [], confirmations = [], removedLayers = [];
   const storage = {
     getItem(key) { if (options.readError) throw new Error('SecurityError'); return data.get(key) ?? null; },
+    removeItem(key) {
+      removals.push(key);
+      if (options.removeError) throw new Error('SecurityError');
+      data.delete(key);
+    },
     setItem(key, value) {
       if (options.writeError) throw new Error('QuotaExceededError');
       options.onWrite?.();
@@ -31,8 +37,8 @@ function setup(options = {}) {
   };
   const views = [], cars = [], currents = [], gps = [], requests = [], timers = new Set();
   const circles = [], watches = [], cleared = [], activeWatches = new Set(), windowEvents = {};
-  const tileEvents = {}, resizeObservers = [], invalidations = [];
-  const map = { setView(point, zoom) { views.push({ point: [...point], zoom }); return this; }, invalidateSize(options) { invalidations.push({ ...options }); }, removeLayer(layer) { layer.removed = true; } };
+  const tileEvents = {}, tileConfigs = [], resizeObservers = [], invalidations = [];
+  const map = { setView(point, zoom) { views.push({ point: [...point], zoom }); return this; }, invalidateSize(options) { invalidations.push({ ...options }); }, removeLayer(layer) { removedLayers.push(layer); layer.removed = true; } };
   function marker(point, config, collection) {
     const m = { point: [...point], config, addTo() { return this; },
       setLatLng(point) { this.point = [...point]; return this; },
@@ -46,12 +52,16 @@ function setup(options = {}) {
   }
   const L = {
     map: () => map,
-    tileLayer: () => ({ on(event, callback) { tileEvents[event] = callback; return this; }, addTo() { return this; } }),
+    tileLayer: (url, config) => {
+      tileConfigs.push({ url, ...config });
+      return { on(event, callback) { tileEvents[event] = callback; return this; }, addTo() { return this; } };
+    },
     marker: (p, c) => marker(p, c, cars), circleMarker: (p, c) => marker(p, c, currents),
     circle: (p, c) => marker(p, c, circles),
     divIcon: config => config
   };
   const window = {
+    confirm(message) { confirmations.push(message); return options.confirm !== false; },
     addEventListener(event, callback) { windowEvents[event] = callback; },
     removeEventListener(event, callback) { if (windowEvents[event] === callback) delete windowEvents[event]; },
     L: options.noLeaflet ? undefined : L, isSecureContext: options.secure !== false,
@@ -75,6 +85,8 @@ function setup(options = {}) {
     },
     clearWatch(id) { cleared.push(id); activeWatches.delete(id); }
   } };
+  document.getElementById('parking-status').disabled = false;
+  document.getElementById('clear-parking-button').hidden = true;
   vm.runInNewContext(source, {
     window, L, document, navigator, URLSearchParams, AbortController, Uint8Array,
     ResizeObserver: options.noResizeObserver ? undefined : class {
@@ -90,10 +102,12 @@ function setup(options = {}) {
       });
     }
   });
-  return { elements, data, writes, views, cars, currents, gps, requests, timers, options, circles, watches, cleared, activeWatches, windowEvents, tileEvents, resizeObservers, invalidations,
+  return { elements, document, data, writes, removals, confirmations, removedLayers, views, cars, currents, gps, requests, timers, options, circles, watches, cleared, activeWatches, windowEvents, tileEvents, tileConfigs, resizeObservers, invalidations,
     saved: () => JSON.parse(data.get(KEY)),
     status: () => elements['parking-status'].textContent,
     button: () => elements['park-button'],
+    clearButton: () => elements['clear-parking-button'],
+    clear: () => elements['clear-parking-button'].listeners.click(),
     click: () => elements['park-button'].listeners.click(),
     ready() { gps[0].success(position(1, 2)); },
     finish() { [...timers].find(timer => timer.ms === 5000)?.callback(); },
@@ -680,4 +694,198 @@ test('map resize invalidates size without panning and works without ResizeObserv
   assert.equal(unsupported.resizeObservers.length, 0);
   assert.equal(unsupported.cars.length, 1);
   assert.equal(unsupported.button().disabled, false);
+});
+
+// Clear Parking: exercise the real handlers, including defensive calls on disabled buttons.
+test('clear action is hidden without valid parking and available on restoration without GPS', () => {
+  for (const options of [{}, { raw: '{' }, { raw: JSON.stringify(record({ version: 2 })) }]) {
+    const app = setup(options);
+    assert.equal(app.clearButton().hidden, true);
+    assert.equal(app.clearButton().disabled, true);
+    app.clear();
+    assert.equal(app.confirmations.length, 0);
+    assert.equal(app.removals.length, 0);
+    app.ready(); app.save();
+    assert.equal(app.clearButton().hidden, false);
+    assert.equal(app.clearButton().disabled, false);
+  }
+  for (const options of [{ noGps: true }, { secure: false }, { gpsThrows: true }, {}]) {
+    const app = setup({ raw: JSON.stringify(record()), ...options });
+    if (app.gps.length) app.gps[0].error({ code: 1 });
+    assert.equal(app.clearButton().hidden, false);
+    assert.equal(app.clearButton().disabled, false);
+    const gpsCalls = app.gps.length;
+    app.clear();
+    assert.equal(app.data.has(KEY), false);
+    assert.equal(app.status(), 'Marcação removida');
+    assert.equal(app.button().disabled, true);
+    assert.equal(app.document.activeElement, app.elements['parking-status']);
+    assert.equal(app.gps.length, gpsCalls);
+    assert.equal(app.requests.length, 0);
+  }
+  const noMap = setup({ noLeaflet: true, raw: JSON.stringify(record()) });
+  assert.equal(noMap.clearButton().hidden, true);
+  assert.equal(noMap.clearButton().disabled, true);
+  assert.equal(noMap.data.has(KEY), true);
+});
+
+test('cancelling removal preserves parking, feedback and pending address operation', async () => {
+  const app = setup({ confirm: false }); app.ready(); app.save();
+  const raw = app.data.get(KEY), car = app.cars[0], popup = car.popup, status = app.status();
+  app.clear();
+  assert.deepEqual(app.confirmations, ['Remover a marcação do estacionamento?']);
+  assert.equal(app.data.get(KEY), raw);
+  assert.equal(app.cars[0], car);
+  assert.equal(car.popup, popup);
+  assert.equal(app.status(), status);
+  assert.equal(app.removals.length, 0);
+  assert.equal(app.removedLayers.length, 0);
+  assert.equal(app.document.activeElement, undefined);
+  app.respond(0, { address: 'Still current' }); await tick();
+  assert.equal(app.saved().address, 'Still current');
+  assert.equal(app.status(), 'Estacionamento salvo');
+});
+
+test('confirmed removal deletes only parking and preserves current location, accuracy and map view', () => {
+  const app = setup(); app.ready(); app.save();
+  app.data.set('unrelated', 'keep');
+  const current = app.currents[0], circle = app.circles[0];
+  const views = JSON.stringify(app.views), gpsCalls = app.gps.length, requests = app.requests.length;
+  const point = [...current.point], radius = circle.config.radius;
+  const tiles = JSON.stringify(app.tileConfigs);
+  app.clear();
+  assert.deepEqual(app.removals, [KEY]);
+  assert.equal(app.data.has(KEY), false);
+  assert.equal(app.data.get('unrelated'), 'keep');
+  assert.deepEqual(app.removedLayers, [app.cars[0]]);
+  assert.equal(app.currents[0], current);
+  assert.equal(app.circles[0], circle);
+  assert.equal(current.removed, undefined);
+  assert.equal(circle.removed, undefined);
+  assert.deepEqual(current.point, point);
+  assert.equal(circle.config.radius, radius);
+  assert.equal(JSON.stringify(app.views), views);
+  assert.equal(JSON.stringify(app.tileConfigs), tiles);
+  assert.match(app.tileConfigs[0].attribution, /OpenStreetMap/);
+  assert.equal(app.gps.length, gpsCalls);
+  assert.equal(app.requests.length, requests);
+  assert.equal(app.clearButton().hidden, true);
+  assert.equal(app.clearButton().disabled, true);
+  assert.equal(app.status(), 'Marcação removida');
+  assert.equal(app.document.activeElement, app.button());
+  app.clear();
+  assert.equal(app.confirmations.length, 1);
+  const reopened = setup({ raw: app.data.get(KEY), noGps: true });
+  assert.equal(reopened.cars.length, 0);
+  assert.equal(reopened.clearButton().hidden, true);
+  assert.equal(reopened.requests.length, 0);
+});
+
+test('storage removal and getter failures preserve parking and allow a subsequent retry', () => {
+  for (const failure of ['removeError', 'storageAccessError']) {
+    const app = setup({ raw: JSON.stringify(record()) }); app.ready();
+    const raw = app.data.get(KEY), popup = app.cars[0].popup;
+    app.options[failure] = true; app.clear();
+    assert.equal(app.data.get(KEY), raw);
+    assert.equal(app.cars[0].popup, popup);
+    assert.equal(app.removedLayers.length, 0);
+    assert.equal(app.clearButton().hidden, false);
+    assert.equal(app.clearButton().disabled, false);
+    assert.match(app.status(), /Não foi possível remover/);
+    assert.equal(app.document.activeElement, undefined);
+    app.options[failure] = false; app.clear();
+    assert.equal(app.data.has(KEY), false);
+    assert.equal(app.status(), 'Marcação removida');
+  }
+});
+
+test('late HTTP outcomes after removal cannot rewrite storage, markers or confirmation', async () => {
+  for (const outcome of ['success', 'http', 'network', 'timeout', 'invalid-json']) {
+    const app = setup(); app.ready(); app.save(); app.clear();
+    const writes = app.writes.length;
+    if (outcome === 'success') app.respond(0, { address: 'Old address' });
+    if (outcome === 'http') app.respond(0, {}, 503);
+    if (outcome === 'network') app.requests[0].reject(new Error('offline'));
+    if (outcome === 'timeout') [...app.timers].find(t => t.ms === 10000).callback();
+    if (outcome === 'invalid-json') app.requests[0].resolve({ ok: true, json: async () => { throw new Error('JSON'); } });
+    await tick();
+    assert.equal(app.data.has(KEY), false);
+    assert.equal(app.writes.length, writes);
+    assert.equal(app.cars.length, 1);
+    assert.equal(app.cars[0].removed, true);
+    assert.equal(app.status(), 'Marcação removida');
+    assert.equal(app.timers.size, 0);
+  }
+});
+
+test('pending JSON after removal cannot restore parking even after a new parking is saved', async () => {
+  for (const parkAgain of [false, true]) {
+    const app = setup(); app.ready(); app.save();
+    let resolveJson;
+    app.requests[0].resolve({ ok: true, json: () => new Promise(resolve => { resolveJson = resolve; }) });
+    await tick();
+    assert.equal(typeof resolveJson, 'function');
+    const oldId = app.saved().id;
+    app.clear();
+    if (parkAgain) {
+      app.save(50, 60);
+      assert.notEqual(app.saved().id, oldId);
+      app.respond(1, { address: 'New address' }); await tick();
+      assert.equal(app.cars.length, 2);
+      assert.notEqual(app.cars[0], app.cars[1]);
+      assert.equal(app.cars[1].removed, undefined);
+      assert.deepEqual(app.cars[1].point, [50, 60]);
+      assert.equal(app.clearButton().hidden, false);
+      assert.equal(app.clearButton().disabled, false);
+      assert.equal(app.data.size, 1);
+    }
+    const raw = app.data.get(KEY), status = app.status(), writes = app.writes.length;
+    resolveJson({ address: 'Old JSON' }); await tick();
+    assert.equal(app.data.get(KEY), raw);
+    assert.equal(app.status(), status);
+    assert.equal(app.writes.length, writes);
+    assert.equal(app.cars.length, parkAgain ? 2 : 1);
+  }
+});
+
+test('late HTTP cannot hide a removal error but may still enrich the preserved parking', async () => {
+  for (const outcome of ['success', 'http', 'network']) {
+    const app = setup(); app.ready(); app.save();
+    app.options.removeError = true; app.clear();
+    const error = app.status(), id = app.saved().id;
+    if (outcome === 'success') app.respond(0, { address: 'Preserved address' });
+    if (outcome === 'http') app.respond(0, {}, 503);
+    if (outcome === 'network') app.requests[0].reject(new Error('offline'));
+    await tick();
+    assert.equal(app.status(), error);
+    assert.equal(app.saved().id, id);
+    assert.equal(app.cars.length, 1);
+    assert.equal(app.removedLayers.length, 0);
+    if (outcome === 'success') assert.equal(app.saved().address, 'Preserved address');
+    app.save(60, 70); app.respond(1, { address: 'Next address' }); await tick();
+    assert.equal(app.status(), 'Estacionamento salvo');
+    assert.equal(app.saved().address, 'Next address');
+  }
+});
+
+test('removal is blocked during acquisition and reenabled after success or failure', () => {
+  for (const outcome of ['success', 'denied', 'timeout', 'storage']) {
+    const app = setup({ raw: JSON.stringify(record()) }); app.ready(); app.click();
+    assert.equal(app.clearButton().hidden, false);
+    assert.equal(app.clearButton().disabled, true);
+    const raw = app.data.get(KEY);
+    app.clear();
+    assert.equal(app.data.get(KEY), raw);
+    assert.equal(app.confirmations.length, 0);
+    assert.equal(app.removals.length, 0);
+    if (outcome === 'denied') app.watches[0].error({ code: 1 });
+    else if (outcome === 'timeout') app.finish();
+    else {
+      app.options.writeError = outcome === 'storage';
+      app.watches[0].success(position());
+    }
+    assert.equal(app.clearButton().disabled, false);
+    app.clear();
+    assert.equal(app.status(), 'Marcação removida');
+  }
 });

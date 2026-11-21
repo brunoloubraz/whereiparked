@@ -23,7 +23,9 @@ O MVP mantém **um único estacionamento salvo**, sem conta, autenticação, ban
 - Se a especificação divergir do repositório real, aponte a divergência antes de mudanças destrutivas.
 
 ## Escopo atual
-As etapas 1 a 5 estão concluídas. O escopo atual é **6 — Testes, qualidade e CI**, descrito em `docs/step/006-application-tests.md`. Preserve funcionalidades, contratos REST, armazenamento e layout. Não implementar Docker ou deploy.
+As etapas 1 a 6 estão concluídas. O escopo atual é **6.5 — Remover marcação de estacionamento**, descrito em `docs/step/006-5-clear-parking.md`. A ação secundária remove somente o estacionamento salvo, com confirmação, sem depender do GPS. Preserve contratos REST, formato/chave do armazenamento, aquisição/precisão do GPS e layout. Não implementar Docker ou deploy.
+
+A remoção deve excluir a chave antes de limpar estado/marcador; falhas preservam o estacionamento. Preserve `storedOperation()` e `operation` contra respostas atrasadas e o enriquecimento durante uma nova captura. O erro de remoção não pode ser encoberto por HTTP pendente. Se Leaflet não carregar, manter as ações indisponíveis e o erro existente.
 
 ## Verificação
 - Java 21: `./mvnw clean verify`.

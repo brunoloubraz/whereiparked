@@ -30,7 +30,8 @@
 
     <footer class="page-footer">
       <button id="park-button" class="park-button" type="button" aria-describedby="parking-status location-status" disabled>Parked</button>
-      <p id="parking-status" class="map-status" role="status" aria-live="polite" aria-atomic="true"></p>
+      <button id="clear-parking-button" class="clear-parking-button" type="button" aria-describedby="parking-status" hidden disabled>Remover marcação</button>
+      <p id="parking-status" tabindex="-1" class="map-status" role="status" aria-live="polite" aria-atomic="true"></p>
     </footer>
   </body>
 </html>
