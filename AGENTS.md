@@ -23,7 +23,7 @@ O MVP mantém **um único estacionamento salvo**, sem conta, autenticação, ban
 - Se a especificação divergir do repositório real, aponte a divergência antes de mudanças destrutivas.
 
 ## Escopo atual
-As etapas 1 a 6 estão concluídas. O escopo atual é **6.5 — Remover marcação de estacionamento**, descrito em `docs/step/006-5-clear-parking.md`. A ação secundária remove somente o estacionamento salvo, com confirmação, sem depender do GPS. Preserve contratos REST, formato/chave do armazenamento, aquisição/precisão do GPS e layout. Não implementar Docker ou deploy.
+As etapas 1 a 6.5 estão concluídas. O escopo atual é **7 — Docker e deploy na Vercel**, descrito em `docs/step/007-vercel-deployment.md`. Preparar Docker multi-stage Java 21, runtime não-root, `vercel.json` Container, porta `${PORT:8080}`, CI Docker e documentação. Frontend e API continuam juntos no Spring Boot, com destino Vercel Hobby. Preserve contratos REST, formato/chave do armazenamento, aquisição/precisão do GPS, layout e remoção com confirmação sem GPS. Não habilitar geocodificação pública automaticamente. Não criar recursos nem fazer deploy sem pedido explícito.
 
 A remoção deve excluir a chave antes de limpar estado/marcador; falhas preservam o estacionamento. Preserve `storedOperation()` e `operation` contra respostas atrasadas e o enriquecimento durante uma nova captura. O erro de remoção não pode ser encoberto por HTTP pendente. Se Leaflet não carregar, manter as ações indisponíveis e o erro existente.
 
@@ -31,6 +31,7 @@ A remoção deve excluir a chave antes de limpar estado/marcador; falhas preserv
 - Java 21: `./mvnw clean verify`.
 - JavaScript (CI: Node.js 24): `node --test src/test/js/*.test.cjs`.
 - Diff: `git diff --check`.
+- Docker disponível: build da imagem e smoke HTTP em loopback para `/`, `/js/app.js` e entrada inválida na API (400); manter `GEOCODING_USER_AGENT` vazio. Conferir runtime não-root.
 - Não consultar Nominatim público nem depender de GPS físico nos testes; usar mocks e HTTP em loopback.
 - As configurações Java de teste em `src/test/resources/geocoding-test.properties` isolam `GEOCODING_*` do ambiente. Preservar os overrides locais de transporte.
 - CI: `.github/workflows/ci.yml`, com jobs independentes em PRs e pushes para `main`. Execução real no Actions e validação manual em Safari/iPhone devem ser relatadas separadamente das verificações locais.
