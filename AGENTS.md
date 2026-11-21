@@ -2,13 +2,14 @@
 
 ## Produto e objetivo
 Where I Parked é um site mobile-first para registrar onde um carro foi estacionado e recuperar a posição ao reabrir o site no mesmo navegador/dispositivo.
-O MVP terá **um único estacionamento salvo**, sem conta, autenticação, banco de dados ou sincronização entre dispositivos.
+O MVP mantém **um único estacionamento salvo**, sem conta, autenticação, banco de dados ou sincronização entre dispositivos.
 
 ## Stack decidida
 - Backend: Java 21, Spring Boot 4.1.2, Maven.
 - Frontend: HTML5, CSS3 e JavaScript sem framework; arquivos estáticos servidos pelo Spring Boot em `src/main/resources/static/`.
-- Mapa Leaflet/OpenStreetMap e geolocalização já implementados. A integração do botão Parked e localStorage pertence à etapa 5.
-- Testes Java: dependências já presentes no `pom.xml`.
+- Mapa Leaflet/OpenStreetMap, geolocalização, botão Parked e persistência em localStorage já implementados.
+- Testes Java: JUnit, Mockito e MockMvc; Mockito como agente explícito no Maven Surefire.
+- Testes JavaScript: runner nativo `node:test`, sem dependências npm. CI usa Node.js 24.
 
 ## Fluxo de trabalho
 - Leia a especificação da etapa solicitada em `docs/step/` antes de alterar código.
@@ -22,4 +23,12 @@ O MVP terá **um único estacionamento salvo**, sem conta, autenticação, banco
 - Se a especificação divergir do repositório real, aponte a divergência antes de mudanças destrutivas.
 
 ## Escopo atual
-As etapas 1, 2 e 3 estão concluídas. O escopo atual é **4 — API REST Java + Nominatim**, descrito em `docs/step/004-reverse-geocoding-api.md`. Preserve o frontend e não antecipe a etapa 5.
+As etapas 1 a 5 estão concluídas. O escopo atual é **6 — Testes, qualidade e CI**, descrito em `docs/step/006-application-tests.md`. Preserve funcionalidades, contratos REST, armazenamento e layout. Não implementar Docker ou deploy.
+
+## Verificação
+- Java 21: `./mvnw clean verify`.
+- JavaScript (CI: Node.js 24): `node --test src/test/js/*.test.cjs`.
+- Diff: `git diff --check`.
+- Não consultar Nominatim público nem depender de GPS físico nos testes; usar mocks e HTTP em loopback.
+- As configurações Java de teste em `src/test/resources/geocoding-test.properties` isolam `GEOCODING_*` do ambiente. Preservar os overrides locais de transporte.
+- CI: `.github/workflows/ci.yml`, com jobs independentes em PRs e pushes para `main`. Execução real no Actions e validação manual em Safari/iPhone devem ser relatadas separadamente das verificações locais.

@@ -17,6 +17,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.hamcrest.Matchers.aMapWithSize;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -56,6 +57,7 @@ class LocationControllerTests {
         if (lat != null) request.param("lat", lat);
         if (lon != null) request.param("lon", lon);
         mvc.perform(request).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$").value(aMapWithSize(2)))
                 .andExpect(jsonPath("$.code").value("INVALID_COORDINATES"))
                 .andExpect(jsonPath("$.message").value("Latitude must be between -90 and 90 and longitude between -180 and 180"));
         verifyNoInteractions(service);
@@ -84,6 +86,7 @@ class LocationControllerTests {
     void rejectsExtremeFormatsBeforeCallingService(String lat, String lon) throws Exception {
         mvc.perform(get("/api/location/reverse").param("lat", lat).param("lon", lon))
                 .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$").value(aMapWithSize(2)))
                 .andExpect(jsonPath("$.code").value("INVALID_COORDINATES"));
         verifyNoInteractions(service);
     }
@@ -113,9 +116,17 @@ class LocationControllerTests {
             case GEOCODING_UNAVAILABLE -> 503;
             case GEOCODING_TIMEOUT -> 504;
         };
+        String message = switch (reason) {
+            case ADDRESS_NOT_FOUND -> "No useful address found for this location";
+            case GEOCODING_RATE_LIMITED -> "Geocoding request limit reached; try again later";
+            case GEOCODING_UNAVAILABLE -> "Geocoding is temporarily unavailable";
+            case GEOCODING_TIMEOUT -> "Geocoding provider timed out";
+        };
         mvc.perform(get("/api/location/reverse").param("lat", "12.34567").param("lon", "45.67891"))
                 .andExpect(status().is(status))
+                .andExpect(jsonPath("$").value(aMapWithSize(2)))
                 .andExpect(jsonPath("$.code").value(reason.name()))
+                .andExpect(jsonPath("$.message").value(message))
                 .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("12.34567"))))
                 .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("nominatim"))));
     }
