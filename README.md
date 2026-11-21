@@ -27,6 +27,90 @@ No Windows, usar `.\mvnw.cmd` em lugar de `./mvnw`. Encerrar com `Ctrl+C`.
 O primeiro build precisa de internet para baixar Maven e dependências. Com o
 cache Maven completo, `./mvnw -o clean verify` executa offline.
 
+O servidor usa `PORT`, com fallback para `8080`. Por exemplo,
+`PORT=9090 ./mvnw spring-boot:run` inicia em `http://localhost:9090`.
+
+## Execução com Docker
+
+Com Docker instalado e o daemon iniciado, executar na raiz:
+
+```sh
+docker build -t whereiparked:local .
+docker run --rm -p 127.0.0.1:8080:8080 -e PORT=8080 --name whereiparked-local whereiparked:local
+```
+
+Acesse `http://localhost:8080`; encerre com `Ctrl+C`. O build usa Maven Wrapper
+em JDK 21 e copia somente o JAR executável para JRE 21, com usuário não-root.
+Não exige Java/Maven no host. Testes ficam nos jobs Java/JavaScript do CI;
+o build da imagem usa `-DskipTests`. O primeiro build baixa imagens e dependências.
+O contexto exclui arquivos locais, `.env*`, `.git`, `.vercel`, `target` e documentos.
+Nenhum identificador Nominatim é incluído na imagem; a geocodificação permanece
+desativada por padrão.
+
+Smoke test em outro terminal, sem consultar geocodificação externa:
+
+```sh
+curl -fsS http://localhost:8080/
+curl -fsS http://localhost:8080/js/app.js >/dev/null
+curl -i 'http://localhost:8080/api/location/reverse?lat=invalid&lon=0'
+docker exec whereiparked-local id -u
+```
+
+Esperado: HTML e JavaScript com HTTP 200, entrada inválida com HTTP 400 e UID
+`10001`. Para testar outra porta interna, usar `-p 127.0.0.1:9090:9090 -e PORT=9090`.
+`EXPOSE 8080` documenta a porta padrão; a variável e o mapeamento devem concordar.
+
+## Deploy na Vercel Hobby (procedimento manual)
+
+A etapa 7 prepara os arquivos; nenhum deploy é executado pelo workflow CI.
+Após revisão, aprovação e merge autorizados pelo mantenedor:
+
+1. Entrar na Vercel com GitHub e confirmar o plano **Hobby (Free)**.
+2. Em **Add New > Project**, importar `brunoloubraz/whereiparked`.
+3. Manter **Root Directory** na raiz (`./`) e **Framework Preset: Container**.
+   O [vercel.json](vercel.json) seleciona `container` para construir o
+   `Dockerfile` convencional da raiz. Frontend e API são servidos pelo mesmo
+   Spring Boot, sob o mesmo domínio HTTPS. Não definir output estático,
+   reescritas de `/api` ou subpasta `static` como raiz.
+4. Configurar **`PORT=8080`** em Production e em Preview se usado. Sem esse
+   override, o roteamento Container da Vercel espera porta 80.
+   **Manter `GEOCODING_USER_AGENT` ausente/vazio neste primeiro deploy público.**
+   Não são necessários tokens de deploy ou secrets no GitHub Actions.
+5. Confirmar **Production Branch: main** e então acionar **Deploy** manualmente.
+   A integração Git pode fazer deployments automáticos em pushes posteriores;
+   revisar suas configurações antes de publicar novas alterações.
+6. Conferir build, logs sem coordenadas/segredos e URL HTTPS: `/`, scripts e
+   estilos devem carregar; `/api/location/reverse?lat=invalid&lon=0` deve retornar
+   400. Uma consulta válida retorna 503 enquanto a geocodificação estiver desativada,
+   preservando o estacionamento salvo e o endereço opcional.
+7. Em Safari/iPhone, na origem estável de produção: permitir GPS, **Parked**,
+   recarregar/reabrir, restaurar com GPS negado, cancelar e confirmar
+   **Remover marcação**, recarregar sem carro e estacionar novamente.
+8. Conferir **Usage**, cotas e permanência no Hobby. Não habilitar recursos que
+   exijam upgrade ou pagamento. Hobby destina-se a uso pessoal não comercial;
+   confirmar elegibilidade e limites vigentes antes de publicar.
+
+O runtime Container está em beta e escala a zero quando ocioso. O primeiro acesso
+pode aguardar o cold start Java; medir esse tempo no deploy real. Limites de
+memória, duração, builds e uso podem afetar a disponibilidade; o plano gratuito
+não implica capacidade ilimitada. Se o build, a porta ou a beta falharem,
+registrar e investigar antes de mudar a arquitetura ou contratar serviços.
+
+Os dados permanecem no `localStorage` do navegador por origem: localhost,
+previews e produção não compartilham estacionamento, nem há migração, conta,
+banco ou sincronização. Não há persistência do estacionamento no container.
+O mapa ainda usa Leaflet/tiles externos e preserva a atribuição OpenStreetMap.
+O cache e o rate limiter Java são por instância: o escalonamento da Vercel não
+garante o limite global exigido pelo Nominatim público. Avaliar adequação do uso,
+privacidade das coordenadas e controle global antes de habilitar esse provedor.
+URLs com query string podem ser registradas pela plataforma; não publicar
+coordenadas nem habilitar logs HTTP detalhados.
+
+Referências oficiais: [Container runtime](https://vercel.com/docs/functions/runtimes/container),
+[Dockerfile convencional](https://vercel.com/changelog/deploy-a-container-from-a-plain-dockerfile),
+[Hobby](https://vercel.com/docs/plans/hobby), [importação Git](https://vercel.com/docs/git)
+e [variáveis de ambiente](https://vercel.com/docs/environment-variables).
+
 ## Configuração da geocodificação
 
 | Variável de ambiente | Padrão | Uso |
@@ -236,7 +320,8 @@ diferentes não compartilham o registro. Navegação privada, limpeza de dados o
 políticas do navegador podem removê-lo. A consulta de endereço transmite a posição
 ao backend e ao provedor. Não há garantia de endereço exato nem de funcionamento
 integral offline: Leaflet e tiles ainda dependem da rede. Não há banco de dados,
-login, histórico, sincronização entre dispositivos ou deploy nesta etapa.
+login, histórico ou sincronização entre dispositivos. A etapa 7 prepara o deploy
+descrito acima, sem executá-lo automaticamente.
 
 ## Etapa 6.5 — Remover marcação
 
@@ -298,6 +383,11 @@ estiver na branch padrão). Os jobs são independentes em `ubuntu-latest`:
   `./mvnw -B --no-transfer-progress clean verify`, com limite de 15 minutos.
 - **JavaScript Tests:** Node.js 24, sem instalação ou cache npm; executa
   `node --test src/test/js/*.test.cjs`, com limite de 5 minutos.
+- **Docker Build and Smoke Test:** build multi-stage e execução local com
+  `PORT=8080`, com limite de 15 minutos. Aguarda o servidor, compara HTML e JS
+  com os arquivos do repositório, exige 400 para entrada inválida e UID não-root.
+  Mostra logs em falhas e remove o container ao terminar. Não faz deploy nem
+  consulta Nominatim público.
 
 As ações oficiais são `actions/checkout@v7`, `actions/setup-java@v6` e
 `actions/setup-node@v7`. O token recebe somente `contents: read`, e o checkout não
@@ -306,7 +396,7 @@ Nominatim público para as suítes. Downloads de ferramentas e dependências pre
 de acesso à internet quando não estiverem em cache.
 
 A validação local do YAML não comprova uma execução no GitHub. Após publicar as
-alterações por ação autorizada do mantenedor, conferir os dois jobs verdes no PR.
+alterações por ação autorizada do mantenedor, conferir os três jobs verdes no PR.
 Safari/iPhone via HTTPS, renderização e leitor de tela permanecem verificações
 manuais, conforme o roteiro abaixo; não fazem parte do CI.
 
@@ -324,6 +414,16 @@ Node.js 20.12.1. A suíte Java precisou de execução fora do sandbox porque os 
 de transporte usam sockets em loopback. `git diff --check` passou. Node.js 24 no
 GitHub Actions e Safari/iPhone/VoiceOver ainda exigem validação separada; não houve
 push, criação de PR ou deploy nesta etapa.
+
+Validação local da etapa 7: **168 testes Java** com Temurin 21.0.13 e **41 testes
+JavaScript** com Node.js 20.12.1 aprovados. Java exigiu execução fora do sandbox
+para os sockets em loopback. Build Docker aprovado; smoke da imagem confirmou
+HTML/JS idênticos, API com entrada inválida retornando 400 e UID não-root, usando
+`PORT=8080`, `PORT=9090` e fallback 8080 sem variável. YAML/JSON e shell do smoke
+verificados; `git diff --check` aprovado. Execução dos três jobs no Actions
+(incluindo Node.js 24), Vercel HTTPS/cold start e Safari/iPhone permanecem
+pendentes. Não houve consulta ao Nominatim público, commit, push, PR, deploy
+ou criação de recursos na Vercel.
 
 Diagnóstico de endereço indisponível:
 
